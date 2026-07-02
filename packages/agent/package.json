@@ -1,0 +1,14 @@
+{
+  "name": "@etbek/agent",
+  "private": true,
+  "version": "0.0.0",
+  "main": "./src/runner.ts",
+  "types": "./src/runner.ts",
+  "dependencies": {
+    "@etbek/config": "file:../config",
+    "@etbek/db": "file:../db",
+    "@etbek/integrations": "file:../integrations",
+    "@etbek/types": "file:../types",
+    "@etbek/utils": "file:../utils"
+  }
+}
