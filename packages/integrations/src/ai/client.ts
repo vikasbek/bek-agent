@@ -1,6 +1,6 @@
 import { logger } from "../../../utils/src/logger";
 
-export type ModelProviderName = "codex" | "ollama" | "openai" | "custom";
+export type ModelProviderName = "codex" | "ollama" | "openai" | "custom" | "coding-agent-cli";
 
 export type RequirementAnalysis = {
   decision: "requirements_complete" | "requirements_gap" | "needs_clarification";
@@ -93,12 +93,68 @@ export function normalizeJiraText(value: unknown): string {
   return String(value);
 }
 
+function sanitizeJiraComment(value: string) {
+  return value
+    .replace(/Hi I am viBek:[\s\S]*?(?=\nhttps?:\/\/|\n[A-Z][a-z]+:|\n\n|$)/g, "")
+    .replace(/Hi I am etBek:[\s\S]*?(?=\nhttps?:\/\/|\n[A-Z][a-z]+:|\n\n|$)/g, "")
+    .replace(/Status:\s*[A-Z_]+/gi, "")
+    .replace(/Message:\s*[\s\S]*?(?=\nhttps?:\/\/|\n[A-Z][a-z]+:|\n\n|$)/g, "")
+    .replace(/PR message:\s*[\s\S]*?(?=\nhttps?:\/\/|\n[A-Z][a-z]+:|\n\n|$)/g, "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, "")
+    .replace(/\b\d{4,}\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function normalizeJiraComment(value: unknown): string {
+  const text = normalizeJiraText(value).trim();
+  if (!text) {
+    return "";
+  }
+  return sanitizeJiraComment(text);
+}
+
 function truncate(value: string, limit = 4000) {
   return value.length > limit ? `${value.slice(0, limit)}...<truncated>` : value;
 }
 
 function safePrompt(value: string) {
   return truncate(value.replace(/Authorization:\s*Basic\s+[^\s]+/gi, "Authorization: Basic [redacted]"));
+}
+
+function getOpenAIBaseUrl(baseUrl?: string) {
+  const normalized = (baseUrl ?? "https://api.openai.com/v1").replace(/\/+$/, "");
+  return normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
+}
+
+function extractResponseText(payload: unknown) {
+  const doc = payload as {
+    output_text?: string;
+    output?: Array<{
+      type?: string;
+      content?: Array<{ type?: string; text?: string }>;
+      text?: string;
+    }>;
+  };
+
+  if (typeof doc.output_text === "string" && doc.output_text.trim()) {
+    return doc.output_text;
+  }
+
+  const fragments: string[] = [];
+  for (const item of doc.output ?? []) {
+    if (typeof item.text === "string") {
+      fragments.push(item.text);
+    }
+    for (const content of item.content ?? []) {
+      if (typeof content.text === "string") {
+        fragments.push(content.text);
+      }
+    }
+  }
+
+  return fragments.join("\n").trim();
 }
 
 export interface ModelProvider {
@@ -193,6 +249,81 @@ class BaseProvider implements ModelProvider {
       notes: `Patch repair skipped for ${this.config.provider}:${this.config.modelName}`,
       patch: input.patch
     };
+  }
+}
+
+abstract class OpenAICompatibleProvider extends BaseProvider {
+  protected get endpoint() {
+    return `${getOpenAIBaseUrl(this.config.baseUrl)}/responses`;
+  }
+
+  protected async callResponses(prompt: string, maxTokens: number) {
+    if (!this.config.apiKey) {
+      throw new Error("OpenAI API key is required for this provider. Set AI_API_KEY.");
+    }
+
+    const response = await fetch(this.endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.config.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: this.config.modelName,
+        input: prompt,
+        max_output_tokens: maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`OpenAI Responses API request failed: ${response.status} ${response.statusText}: ${message}`);
+    }
+
+    return response.json();
+  }
+
+  protected async callChatCompletions(prompt: string, maxTokens: number) {
+    if (!this.config.apiKey) {
+      throw new Error("OpenAI API key is required for this provider. Set AI_API_KEY.");
+    }
+
+    const response = await fetch(`${getOpenAIBaseUrl(this.config.baseUrl)}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.config.apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: this.config.modelName,
+        messages: [{ role: "user", content: prompt }],
+        max_completion_tokens: maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`OpenAI Chat Completions request failed: ${response.status} ${response.statusText}: ${message}`);
+    }
+
+    return response.json();
+  }
+
+  protected async callOpenAIText(prompt: string, maxTokens: number) {
+    try {
+      return await this.callResponses(prompt, maxTokens);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("model") && message.includes("not found")) {
+        logger.warn("responses api model not found, falling back to chat completions", {
+          provider: this.config.provider,
+          modelName: this.config.modelName,
+          message
+        });
+        return await this.callChatCompletions(prompt, maxTokens);
+      }
+      throw error;
+    }
   }
 }
 
@@ -337,13 +468,90 @@ class OllamaProvider extends BaseProvider {
   }
 }
 
-class CodexProvider extends BaseProvider {}
+class CodexProvider extends OpenAICompatibleProvider {
+  async testConnection() {
+    const payload = await this.callOpenAIText("Reply with the single word: ready", 16);
+    const text = extractResponseText(payload);
+    if (!text) {
+      throw new Error("Codex endpoint did not return any text");
+    }
+    return {
+      ok: true as const,
+      message: `Codex reachable via Responses API using ${this.config.modelName}`
+    };
+  }
+
+  async analyzeRequirement(input: {
+    issueKey: string;
+    summary: string;
+    description?: string;
+    comments?: string[];
+  }): Promise<RequirementAnalysis> {
+    const prompt = [
+      "Return JSON only with keys decision, summary, gapSummary, commentToReporter, confidence.",
+      "Do not wrap the JSON in markdown or code fences.",
+      `Issue: ${input.issueKey}`,
+      `Summary: ${input.summary}`,
+      `Description: ${input.description ?? ""}`,
+      `Comments: ${(input.comments ?? []).join("\n")}`
+    ].join("\n");
+    this.logPrompt("analyze_requirement", prompt);
+    const payload = await this.callOpenAIText(prompt, this.config.maxTokens ?? 1024);
+    const text = extractResponseText(payload);
+    this.logReply("analyze_requirement", text);
+    return parseJson<RequirementAnalysis>(text, await super.analyzeRequirement(input));
+  }
+
+  async generateImplementationPlan(input: {
+    issueKey: string;
+    summary: string;
+    requirement: RequirementAnalysis;
+  }): Promise<ChangePlan> {
+    const prompt = [
+      "Return JSON only with keys decision, summary, commitMessage, notes, patch.",
+      "Do not wrap the JSON in markdown or code fences.",
+      "The patch must be a valid unified diff with explicit file headers and hunks.",
+      "Do not return an empty patch if any source files can be modified.",
+      `Issue: ${input.issueKey}`,
+      `Summary: ${input.summary}`,
+      `Requirement decision: ${input.requirement.decision}`,
+      `Requirement summary: ${input.requirement.summary}`,
+      `Gap summary: ${input.requirement.gapSummary ?? ""}`
+    ].join("\n");
+    this.logPrompt("generate_plan", prompt);
+    const payload = await this.callOpenAIText(prompt, this.config.maxTokens ?? 2048);
+    const text = extractResponseText(payload);
+    this.logReply("generate_plan", text);
+    return parseJson<ChangePlan>(text, await super.generateImplementationPlan(input));
+  }
+
+  async repairPatch(input: PatchRepairRequest): Promise<ChangePlan> {
+    const prompt = [
+      "Return JSON only with keys decision, summary, commitMessage, notes, patch.",
+      "Do not wrap the JSON in markdown or code fences.",
+      "Fix the provided patch so it becomes a valid unified diff with explicit file headers and hunks.",
+      `Issue: ${input.issueKey}`,
+      `Summary: ${input.summary}`,
+      `Requirement summary: ${input.requirementSummary}`,
+      `Patch error: ${input.patchError}`,
+      `Patch to repair:\n${input.patch}`
+    ].join("\n");
+    this.logPrompt("repair_patch", prompt);
+    const payload = await this.callOpenAIText(prompt, this.config.maxTokens ?? 2048);
+    const text = extractResponseText(payload);
+    this.logReply("repair_patch", text);
+    return parseJson<ChangePlan>(text, await super.repairPatch(input));
+  }
+}
 
 export function createModelProvider(config: ModelProviderConfig): ModelProvider {
   switch (config.provider) {
     case "ollama":
       return new OllamaProvider(config);
     case "codex":
+      return new CodexProvider(config);
+    case "openai":
+    case "custom":
       return new CodexProvider(config);
     default:
       return new BaseProvider(config);

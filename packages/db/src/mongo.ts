@@ -182,6 +182,9 @@ async function loadRuntimeConfig(db: Db): Promise<RuntimeConfig> {
     modelBaseUrl: doc.modelBaseUrl ?? defaultRuntimeConfig.modelBaseUrl,
     modelTemperature: doc.modelTemperature ?? defaultRuntimeConfig.modelTemperature,
     modelMaxTokens: doc.modelMaxTokens ?? defaultRuntimeConfig.modelMaxTokens,
+    codingAgentCommand: doc.codingAgentCommand ?? defaultRuntimeConfig.codingAgentCommand,
+    codingAgentArgs: doc.codingAgentArgs ?? defaultRuntimeConfig.codingAgentArgs,
+    codingAgentTimeoutMs: doc.codingAgentTimeoutMs ?? defaultRuntimeConfig.codingAgentTimeoutMs,
     updatedAt: doc.updatedAt ?? defaultRuntimeConfig.updatedAt
   };
 }
@@ -233,6 +236,9 @@ async function listRuntimeConfigs(db: Db): Promise<RuntimeConfigRecord[]> {
     modelBaseUrl: doc.modelBaseUrl ?? defaultRuntimeConfig.modelBaseUrl,
     modelTemperature: doc.modelTemperature ?? defaultRuntimeConfig.modelTemperature,
     modelMaxTokens: doc.modelMaxTokens ?? defaultRuntimeConfig.modelMaxTokens,
+    codingAgentCommand: doc.codingAgentCommand ?? defaultRuntimeConfig.codingAgentCommand,
+    codingAgentArgs: doc.codingAgentArgs ?? defaultRuntimeConfig.codingAgentArgs,
+    codingAgentTimeoutMs: doc.codingAgentTimeoutMs ?? defaultRuntimeConfig.codingAgentTimeoutMs,
     updatedAt: doc.updatedAt ?? defaultRuntimeConfig.updatedAt,
     createdAt: doc.createdAt,
     lastProcessedAt: doc.lastProcessedAt,
@@ -269,6 +275,9 @@ async function upsertRuntimeConfig(
           modelBaseUrl: existing.modelBaseUrl ?? defaultRuntimeConfig.modelBaseUrl,
           modelTemperature: existing.modelTemperature ?? defaultRuntimeConfig.modelTemperature,
           modelMaxTokens: existing.modelMaxTokens ?? defaultRuntimeConfig.modelMaxTokens,
+          codingAgentCommand: existing.codingAgentCommand ?? defaultRuntimeConfig.codingAgentCommand,
+          codingAgentArgs: existing.codingAgentArgs ?? defaultRuntimeConfig.codingAgentArgs,
+          codingAgentTimeoutMs: existing.codingAgentTimeoutMs ?? defaultRuntimeConfig.codingAgentTimeoutMs,
           updatedAt: existing.updatedAt ?? defaultRuntimeConfig.updatedAt
         }
       : defaultRuntimeConfig;
@@ -301,6 +310,9 @@ async function upsertRuntimeConfig(
   if (patch.modelBaseUrl !== undefined) runtimePatch.modelBaseUrl = patch.modelBaseUrl;
   if (patch.modelTemperature !== undefined) runtimePatch.modelTemperature = patch.modelTemperature;
   if (patch.modelMaxTokens !== undefined) runtimePatch.modelMaxTokens = patch.modelMaxTokens;
+  if (patch.codingAgentCommand !== undefined) runtimePatch.codingAgentCommand = patch.codingAgentCommand;
+  if (patch.codingAgentArgs !== undefined) runtimePatch.codingAgentArgs = patch.codingAgentArgs;
+  if (patch.codingAgentTimeoutMs !== undefined) runtimePatch.codingAgentTimeoutMs = patch.codingAgentTimeoutMs;
   if (patch.updatedAt !== undefined) runtimePatch.updatedAt = patch.updatedAt;
 
   const nextRuntime = mergeRuntimeConfig(currentRuntime, runtimePatch);

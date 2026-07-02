@@ -30,7 +30,10 @@ export const envSchema = z.object({
   AI_API_KEY: z.string().optional().default(""),
   LOG_MODEL_PROMPTS: z.coerce.boolean().default(false),
   DEFAULT_BASE_BRANCH: z.string().default("master"),
-  WORKER_PARALLELISM: z.coerce.number().default(2)
+  WORKER_PARALLELISM: z.coerce.number().default(2),
+  AGENT_CLI_COMMAND: z.string().optional().default("codex"),
+  AGENT_CLI_ARGS: z.string().optional().default("exec --full-auto"),
+  AGENT_CLI_TIMEOUT_MS: z.coerce.number().default(15 * 60 * 1000)
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

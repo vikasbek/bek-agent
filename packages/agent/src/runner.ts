@@ -1,7 +1,8 @@
 import { bootstrapEnv } from "../../config/src/bootstrap";
 import type { AppEnv } from "../../config/src/env";
 import type { Repository } from "../../db/src/mongo";
-import { createModelProvider, normalizeJiraText, type ChangePlan } from "../../integrations/src/ai/client";
+import { createModelProvider, normalizeJiraText, normalizeJiraComment, type ChangePlan } from "../../integrations/src/ai/client";
+import { runCodingAgent } from "../../integrations/src/ai/coding-agent";
 import { GitClient } from "../../integrations/src/git/client";
 import { JiraClient } from "../../integrations/src/jira/client";
 import type { AgentExecution, JiraIssueRecord, QueueSummary, RuntimeConfigRecord } from "../../types/src/index";
@@ -131,7 +132,7 @@ function buildPlanPrompt(issueKey: string, summary: string, requirement: string,
 }
 
 function extractCommentText(comment: unknown) {
-  return normalizeJiraText(comment).trim();
+  return normalizeJiraComment(comment);
 }
 
 async function finishExecution(
@@ -466,39 +467,66 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
       message: `Branch ready: ${branchName}`
     });
 
-    const plan = await model.generateImplementationPlan({
-      issueKey: issue.jiraKey,
-      summary: issue.summary,
-      requirement: analysis
-    });
-    const planPrompt = buildPlanPrompt(issue.jiraKey, issue.summary, analysis.summary, analysis.gapSummary);
-    await recordModelTrace(repository, issueExecution, {
-      prompt: planPrompt,
-      reply: plan,
-      message: `Model plan: ${plan.decision}`
-    });
+    let commitResult: Awaited<ReturnType<GitClient["commitAndPush"]>>;
 
-    if (plan.decision !== "proceed") {
-      throw new Error(plan.summary || "Model did not return a proceed decision");
+    if (config.modelProvider === "coding-agent-cli") {
+      const repoPath = getRepositoryRoot(env, config);
+      const agentResult = await runCodingAgent({
+        repoPath,
+        branchName,
+        issueKey: issue.jiraKey,
+        summary: issue.summary,
+        description,
+        requirementSummary: analysis.summary,
+        command: config.codingAgentCommand || env.AGENT_CLI_COMMAND,
+        args:
+          config.codingAgentArgs && config.codingAgentArgs.length > 0
+            ? config.codingAgentArgs
+            : env.AGENT_CLI_ARGS.split(" ").filter(Boolean),
+        timeoutMs: config.codingAgentTimeoutMs || env.AGENT_CLI_TIMEOUT_MS
+      });
+      await recordModelTrace(repository, issueExecution, {
+        prompt: `coding-agent-cli invoke for ${issue.jiraKey}`,
+        reply: agentResult.rawOutput,
+        message: agentResult.ok ? "Coding agent completed" : "Coding agent failed"
+      });
+      if (!agentResult.ok) {
+        throw new Error(`Coding agent failed: ${agentResult.rawOutput.slice(0, 500)}`);
+      }
+      commitResult = await git.commitAndPush(branchName, agentResult.commitMessage);
+    } else {
+      const plan = await model.generateImplementationPlan({
+        issueKey: issue.jiraKey,
+        summary: issue.summary,
+        requirement: analysis
+      });
+      const planPrompt = buildPlanPrompt(issue.jiraKey, issue.summary, analysis.summary, analysis.gapSummary);
+      await recordModelTrace(repository, issueExecution, {
+        prompt: planPrompt,
+        reply: plan,
+        message: `Model plan: ${plan.decision}`
+      });
+
+      if (plan.decision !== "proceed") {
+        throw new Error(plan.summary || "Model did not return a proceed decision");
+      }
+
+      const changedFiles = await applyPlanWithRepair(
+        env,
+        config,
+        model,
+        plan,
+        issue.jiraKey,
+        issue.summary,
+        analysis.summary
+      );
+      if (changedFiles.length === 0) {
+        throw new Error(`No code changes were generated for ${issue.jiraKey}`);
+      }
+
+      commitResult = await git.commitAndPush(branchName, plan.commitMessage);
     }
 
-    const changedFiles = await applyPlanWithRepair(
-      env,
-      config,
-      model,
-      plan,
-      issue.jiraKey,
-      issue.summary,
-      analysis.summary
-    );
-    if (changedFiles.length === 0) {
-      throw new Error(`No code changes were generated for ${issue.jiraKey}`);
-    }
-
-    const commitResult = await git.commitAndPush(
-      branchName,
-      plan.commitMessage
-    );
     if (!commitResult.committed || !commitResult.pushed) {
       throw new Error(
         `No code changes were generated for ${issue.jiraKey}. The agent needs an implementation step before PR creation.`

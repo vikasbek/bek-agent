@@ -20,6 +20,9 @@ export const defaultRuntimeConfig: RuntimeConfig = {
   modelBaseUrl: "http://localhost:11434",
   modelTemperature: 0.2,
   modelMaxTokens: 2048,
+  codingAgentCommand: "codex",
+  codingAgentArgs: ["exec", "--full-auto"],
+  codingAgentTimeoutMs: 15 * 60 * 1000,
   updatedAt: new Date().toISOString()
 };
 

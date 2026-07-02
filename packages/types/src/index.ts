@@ -23,11 +23,14 @@ export type RuntimeConfig = {
   reviewRequired: boolean;
   prTitleTemplate: string;
   prBodyTemplate: string;
-  modelProvider: "codex" | "ollama" | "openai" | "custom";
+  modelProvider: "codex" | "ollama" | "openai" | "custom" | "coding-agent-cli";
   modelName: string;
   modelBaseUrl?: string;
   modelTemperature?: number;
   modelMaxTokens?: number;
+  codingAgentCommand?: string;
+  codingAgentArgs?: string[];
+  codingAgentTimeoutMs?: number;
   updatedAt: string;
 };
 

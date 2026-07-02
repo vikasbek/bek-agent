@@ -44,11 +44,14 @@ type RuntimeConfig = {
   reviewRequired: boolean;
   prTitleTemplate: string;
   prBodyTemplate: string;
-  modelProvider: "codex" | "ollama" | "openai" | "custom";
+  modelProvider: "codex" | "ollama" | "openai" | "custom" | "coding-agent-cli";
   modelName: string;
   modelBaseUrl?: string;
   modelTemperature?: number;
   modelMaxTokens?: number;
+  codingAgentCommand?: string;
+  codingAgentArgs?: string[];
+  codingAgentTimeoutMs?: number;
   createdAt: string;
   updatedAt: string;
   lastProcessedAt?: string;
@@ -75,6 +78,12 @@ type QueueSummary = {
   lastError?: string;
 };
 
+type CodexModelsResponse = {
+  ok: boolean;
+  models?: string[];
+  message?: string;
+};
+
 const emptyConfig: RuntimeConfig = {
   name: "",
   active: false,
@@ -97,6 +106,9 @@ const emptyConfig: RuntimeConfig = {
   modelBaseUrl: "http://localhost:11434",
   modelTemperature: 0.2,
   modelMaxTokens: 2048,
+  codingAgentCommand: "codex",
+  codingAgentArgs: ["exec", "--full-auto"],
+  codingAgentTimeoutMs: 15 * 60 * 1000,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString()
 };
@@ -120,6 +132,8 @@ export function SettingsForm() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [selected, setSelected] = useState<RuntimeConfig>(emptyConfig);
+  const [codexModels, setCodexModels] = useState<string[]>([]);
+  const [codexModelsLoading, setCodexModelsLoading] = useState(false);
   const [form] = Form.useForm<RuntimeConfig>();
 
   const selectedConfig = useMemo(
@@ -154,6 +168,27 @@ export function SettingsForm() {
       form.setFieldsValue(selectedConfig);
     }
   }, [selectedConfig, form]);
+
+  useEffect(() => {
+    async function loadCodexModels() {
+      if (form.getFieldValue("modelProvider") !== "codex") {
+        return;
+      }
+      setCodexModelsLoading(true);
+      try {
+        const response = await apiGet<CodexModelsResponse>("/api/settings/codex-models");
+        setCodexModels(response.models ?? []);
+      } catch {
+        setCodexModels([]);
+      } finally {
+        setCodexModelsLoading(false);
+      }
+    }
+
+    if (drawerOpen) {
+      void loadCodexModels();
+    }
+  }, [drawerOpen, form]);
 
   const activeConfigs = configs.filter((config) => config.active).length;
 
@@ -215,11 +250,31 @@ export function SettingsForm() {
         modelName: values.modelName,
         modelBaseUrl: values.modelBaseUrl,
         modelTemperature: values.modelTemperature,
-        modelMaxTokens: values.modelMaxTokens
+        modelMaxTokens: values.modelMaxTokens,
+        codingAgentCommand: values.codingAgentCommand,
+        codingAgentArgs: values.codingAgentArgs,
+        codingAgentTimeoutMs: values.codingAgentTimeoutMs
       });
       setMessage("Provider test passed");
     } catch {
       setMessage("Provider test failed");
+    }
+  }
+
+  async function onModelProviderChange(value: RuntimeConfig["modelProvider"]) {
+    form.setFieldValue("modelProvider", value);
+    if (value !== "codex") {
+      setCodexModels([]);
+      return;
+    }
+    setCodexModelsLoading(true);
+    try {
+      const response = await apiGet<CodexModelsResponse>("/api/settings/codex-models");
+      setCodexModels(response.models ?? []);
+    } catch {
+      setCodexModels([]);
+    } finally {
+      setCodexModelsLoading(false);
     }
   }
 
@@ -443,18 +498,29 @@ export function SettingsForm() {
             <Col xs={24} md={12}>
               <Form.Item name="modelProvider" label="Model provider">
                 <Select
+                  onChange={onModelProviderChange}
                   options={[
                     { value: "ollama", label: "Ollama" },
                     { value: "codex", label: "Codex" },
                     { value: "openai", label: "OpenAI" },
-                    { value: "custom", label: "Custom" }
+                    { value: "custom", label: "Custom" },
+                    { value: "coding-agent-cli", label: "Coding agent CLI (writes real code)" }
                   ]}
                 />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
               <Form.Item name="modelName" label="Model name">
-                <Input />
+                {form.getFieldValue("modelProvider") === "codex" ? (
+                  <Select
+                    showSearch
+                    loading={codexModelsLoading}
+                    options={codexModels.map((model) => ({ value: model, label: model }))}
+                    notFoundContent={codexModelsLoading ? "Loading models..." : "No models found"}
+                  />
+                ) : (
+                  <Input />
+                )}
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
@@ -472,6 +538,25 @@ export function SettingsForm() {
                 <Input type="number" min={128} step={128} />
               </Form.Item>
             </Col>
+            {form.getFieldValue("modelProvider") === "coding-agent-cli" ? (
+              <>
+                <Col xs={24} md={12}>
+                  <Form.Item name="codingAgentCommand" label="Coding agent CLI command">
+                    <Input placeholder="codex" />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item name="codingAgentArgs" label="Coding agent CLI args">
+                    <Select mode="tags" open={false} placeholder="exec --full-auto" tokenSeparators={[" "]} />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item name="codingAgentTimeoutMs" label="Coding agent timeout (ms)">
+                    <Input type="number" min={30000} step={30000} />
+                  </Form.Item>
+                </Col>
+              </>
+            ) : null}
           </Row>
         </Form>
       </Drawer>
