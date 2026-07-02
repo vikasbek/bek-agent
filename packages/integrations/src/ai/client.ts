@@ -36,11 +36,32 @@ export type ModelProviderConfig = {
 };
 
 function parseJson<T>(value: string, fallback: T): T {
+  const normalized = extractJsonCandidate(value);
   try {
-    return JSON.parse(value) as T;
+    return JSON.parse(normalized) as T;
   } catch {
     return fallback;
   }
+}
+
+function extractJsonCandidate(value: string) {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced?.[1]) {
+    return fenced[1].trim();
+  }
+
+  const firstObject = trimmed.match(/\{[\s\S]*\}/);
+  if (firstObject?.[0]) {
+    return firstObject[0];
+  }
+
+  const firstArray = trimmed.match(/\[[\s\S]*\]/);
+  if (firstArray?.[0]) {
+    return firstArray[0];
+  }
+
+  return trimmed;
 }
 
 export function normalizeJiraText(value: unknown): string {
@@ -229,12 +250,28 @@ class OllamaProvider extends BaseProvider {
     const baseUrl = this.config.baseUrl ?? "http://localhost:11434";
     const prompt = [
       "Return JSON only with keys decision, summary, commitMessage, notes, patch.",
-      "The patch must be a valid unified diff or empty string.",
+      "Do not wrap the JSON in markdown or code fences.",
+      "The patch must be a valid unified diff with explicit file headers and hunks.",
+      "Do not return an empty patch if any source files can be modified.",
+      "Target files must be existing repo files or clearly named new files.",
       `Issue: ${input.issueKey}`,
       `Summary: ${input.summary}`,
       `Requirement decision: ${input.requirement.decision}`,
       `Requirement summary: ${input.requirement.summary}`,
-      `Gap summary: ${input.requirement.gapSummary ?? ""}`
+      `Gap summary: ${input.requirement.gapSummary ?? ""}`,
+      "If you cannot determine a safe implementation, return decision requirements_gap and explain why.",
+      "Suggested output shape:",
+      JSON.stringify(
+        {
+          decision: "proceed",
+          summary: "short summary",
+          commitMessage: "feat(scope): concise message",
+          notes: "optional implementation notes",
+          patch: "diff --git a/path b/path\\n..."
+        },
+        null,
+        2
+      )
     ].join("\n");
     this.logPrompt("generate_plan", prompt);
     const response = await fetch(`${baseUrl}/api/generate`, {
@@ -265,12 +302,14 @@ class OllamaProvider extends BaseProvider {
     const baseUrl = this.config.baseUrl ?? "http://localhost:11434";
     const prompt = [
       "Return JSON only with keys decision, summary, commitMessage, notes, patch.",
-      "Fix the provided patch so it becomes a valid unified diff.",
+      "Do not wrap the JSON in markdown or code fences.",
+      "Fix the provided patch so it becomes a valid unified diff with explicit file headers and hunks.",
       `Issue: ${input.issueKey}`,
       `Summary: ${input.summary}`,
       `Requirement summary: ${input.requirementSummary}`,
       `Patch error: ${input.patchError}`,
-      `Patch to repair:\n${input.patch}`
+      `Patch to repair:\n${input.patch}`,
+      "If the patch cannot be repaired, return decision requirements_gap and explain why."
     ].join("\n");
     this.logPrompt("repair_patch", prompt);
     const response = await fetch(`${baseUrl}/api/generate`, {

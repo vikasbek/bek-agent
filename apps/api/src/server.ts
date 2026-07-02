@@ -9,7 +9,7 @@ async function main() {
   const app = createServer({ env, repository });
 
   app.listen(env.API_PORT, () => {
-    logger.info("etbek api listening", {
+    logger.info("viBek api listening", {
       port: env.API_PORT,
       appEnv: env.APP_ENV
     });

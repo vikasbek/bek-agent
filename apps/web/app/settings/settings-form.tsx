@@ -34,6 +34,10 @@ type RuntimeConfig = {
   jiraProjectKey: string;
   jiraJql: string;
   leadDeveloperEmail: string;
+  gitProvider?: "github" | "gitlab" | "bitbucket";
+  gitOwner?: string;
+  gitRepository?: string;
+  repositoryPath?: string;
   baseBranch: string;
   branchPrefix: string;
   autoPickEnabled: boolean;
@@ -78,12 +82,16 @@ const emptyConfig: RuntimeConfig = {
   jiraProjectKey: "",
   jiraJql: "key = ES-2927",
   leadDeveloperEmail: "",
+  gitProvider: "github",
+  gitOwner: "",
+  gitRepository: "",
+  repositoryPath: "",
   baseBranch: "master",
-  branchPrefix: "etbek",
+  branchPrefix: "viBek",
   autoPickEnabled: false,
   reviewRequired: true,
   prTitleTemplate: "[{issueKey}] {summary}",
-  prBodyTemplate: "Prepared by etbek for review.",
+  prBodyTemplate: "Prepared by viBek for review.",
   modelProvider: "ollama",
   modelName: "qwen3.5",
   modelBaseUrl: "http://localhost:11434",
@@ -228,6 +236,11 @@ export function SettingsForm() {
       render: (value: RuntimeConfig["queueState"]) => <Tag color={queueColor[value]}>{value}</Tag>
     },
     { title: "Jira filter", dataIndex: "jiraJql", ellipsis: true },
+    {
+      title: "Repository",
+      render: (_: unknown, record: RuntimeConfig) =>
+        record.gitOwner && record.gitRepository ? `${record.gitOwner}/${record.gitRepository}` : "-"
+    },
     { title: "Base branch", dataIndex: "baseBranch" },
     { title: "Developers", render: () => developers.length },
     {
@@ -349,6 +362,32 @@ export function SettingsForm() {
             <Col xs={24} md={12}>
               <Form.Item name="leadDeveloperEmail" label="Lead developer email">
                 <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="gitProvider" label="Git provider">
+                <Select
+                  options={[
+                    { value: "github", label: "GitHub" },
+                    { value: "gitlab", label: "GitLab" },
+                    { value: "bitbucket", label: "Bitbucket" }
+                  ]}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="gitOwner" label="Repository owner">
+                <Input placeholder="org-or-user" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="gitRepository" label="Repository name">
+                <Input placeholder="repository" />
+              </Form.Item>
+            </Col>
+            <Col xs={24}>
+              <Form.Item name="repositoryPath" label="Local repository path">
+                <Input placeholder="/absolute/path/to/local/checkout" />
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>

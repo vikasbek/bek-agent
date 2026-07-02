@@ -42,7 +42,7 @@ export class GitClient {
     return `https://x-access-token:${encodeURIComponent(this.config.token)}@github.com/${this.config.owner}/${this.config.repository}.git`;
   }
 
-  private async ensureRepository() {
+  private async ensureRepository(baseBranch = "master") {
     const repoPath = this.getRepoPath();
     const gitDir = path.join(repoPath, ".git");
 
@@ -64,9 +64,13 @@ export class GitClient {
     const cloneUrl = this.getCloneUrl();
     const parentDir = path.dirname(repoPath);
     const targetName = path.basename(repoPath);
-    await execFileAsync("git", ["clone", "--branch", "master", "--single-branch", cloneUrl, targetName], {
-      cwd: parentDir
-    });
+    try {
+      await execFileAsync("git", ["clone", "--branch", baseBranch, "--single-branch", cloneUrl, targetName], {
+        cwd: parentDir
+      });
+    } catch (error) {
+      throw redactCommandError(error);
+    }
 
     await this.ensureOriginMatches(repoPath);
 
@@ -96,7 +100,7 @@ export class GitClient {
   }
 
   async ensureBranch(branchName: string, baseBranch: string) {
-    const repoPath = await this.ensureRepository();
+    const repoPath = await this.ensureRepository(baseBranch);
     await this.ensureOriginMatches(repoPath);
 
     try {
@@ -239,4 +243,14 @@ function normalizeGitRemote(value: string) {
 
 function redactSecrets(value: string) {
   return value.replace(/https:\/\/[^@]+@github\.com\//gi, "https://github.com/");
+}
+
+function redactCommandError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return error;
+  }
+
+  const redacted = new IntegrationError(redactSecrets(error.message));
+  redacted.stack = error.stack ? redactSecrets(error.stack) : error.stack;
+  return redacted;
 }

@@ -35,7 +35,7 @@ export function createServer({ env, repository }: { env: AppEnv; repository: Rep
 
   app.get("/", (_req, res) => {
     res.json({
-      name: "etbek api",
+      name: "viBek api",
       status: "ok",
       appEnv: env.APP_ENV
     });

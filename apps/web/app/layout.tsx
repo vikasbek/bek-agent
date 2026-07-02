@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 import { TopBar } from "../components/TopBar";
 
 export const metadata = {
-  title: "etbek",
+  title: "viBek",
   description: "Dashboard-driven Jira to branch to PR agent"
 };
 

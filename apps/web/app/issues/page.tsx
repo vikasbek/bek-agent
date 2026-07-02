@@ -11,7 +11,7 @@ export default function IssuesPage() {
           <Space direction="vertical" size={6}>
             <h1 style={{ margin: 0 }}>Issues</h1>
             <p style={{ margin: 0, color: "var(--muted)" }}>
-              View Jira issues and the branch or PR state tracked by etbek.
+              View Jira issues and the branch or PR state tracked by viBek.
             </p>
           </Space>
         </Card>

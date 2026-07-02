@@ -9,6 +9,7 @@ type Issue = {
   jiraKey: string;
   summary: string;
   assigneeEmail?: string;
+  configName?: string;
   status: string;
   branchName?: string;
   prUrl?: string;
@@ -16,16 +17,44 @@ type Issue = {
   updatedAt: string;
 };
 
+type RuntimeConfig = {
+  name: string;
+  gitOwner?: string;
+  gitRepository?: string;
+  repositoryPath?: string;
+};
+
+type SettingsResponse = {
+  configs: RuntimeConfig[];
+};
+
 const statuses = ["queued", "picked", "in_progress", "ready_for_review", "done", "blocked"];
 
 export function IssuesPanel() {
   const [issues, setIssues] = useState<Issue[]>([]);
+  const [configs, setConfigs] = useState<RuntimeConfig[]>([]);
   const [message, setMessage] = useState("Loading...");
   const [form] = Form.useForm<Issue>();
 
+  function renderRepository(configName?: string) {
+    const config = configs.find((item) => item.name === configName);
+    if (!config) {
+      return "-";
+    }
+    if (config.gitOwner && config.gitRepository) {
+      return `${config.gitOwner}/${config.gitRepository}`;
+    }
+    return config.repositoryPath || "-";
+  }
+
   const refresh = async () => {
     try {
-      setIssues(await apiGet<Issue[]>("/api/issues"));
+      const [issueList, settings] = await Promise.all([
+        apiGet<Issue[]>("/api/issues"),
+        apiGet<SettingsResponse>("/api/settings")
+      ]);
+      setIssues(issueList);
+      setConfigs(settings.configs);
       setMessage("Loaded");
     } catch {
       setMessage("API unavailable");
@@ -43,6 +72,7 @@ export function IssuesPanel() {
       await apiPost("/api/issues", {
         ...values,
         assigneeEmail: values.assigneeEmail || undefined,
+        configName: values.configName || undefined,
         branchName: values.branchName || undefined,
         prUrl: values.prUrl || undefined,
         developerId: values.developerId || undefined
@@ -56,7 +86,7 @@ export function IssuesPanel() {
   }
 
   async function rerunIssue(issue: Issue) {
-    setMessage(`Re-running ${issue.jiraKey} with etBek...`);
+    setMessage(`Re-running ${issue.jiraKey} with viBek...`);
     try {
       await apiPost(`/api/issues/${issue.id}/rerun`, {});
       await apiPost("/api/worker/run-now", {});
@@ -98,6 +128,14 @@ export function IssuesPanel() {
               </Form.Item>
             </Col>
             <Col xs={24} md={6}>
+              <Form.Item name="configName" label="Runtime config">
+                <Select
+                  allowClear
+                  options={configs.map((config) => ({ value: config.name, label: config.name }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={6}>
               <Form.Item name="branchName" label="Branch name">
                 <Input />
               </Form.Item>
@@ -130,6 +168,11 @@ export function IssuesPanel() {
           scroll={{ x: 900 }}
           columns={[
             { title: "Issue", dataIndex: "jiraKey" },
+            { title: "Config", dataIndex: "configName", render: (value?: string) => value ?? "-" },
+            {
+              title: "Repository",
+              render: (_: unknown, record: Issue) => renderRepository(record.configName)
+            },
             { title: "Summary", dataIndex: "summary" },
             { title: "Assignee", dataIndex: "assigneeEmail", render: (value?: string) => value ?? "-" },
             { title: "Status", dataIndex: "status" },
@@ -142,7 +185,7 @@ export function IssuesPanel() {
             {
               title: "Action",
               render: (_: unknown, record: Issue) => (
-                <Button onClick={() => rerunIssue(record)}>Re-run with etBek</Button>
+                <Button onClick={() => rerunIssue(record)}>Re-run with viBek</Button>
               )
             }
           ]}

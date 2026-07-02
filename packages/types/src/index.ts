@@ -13,6 +13,10 @@ export type RuntimeConfig = {
   jiraJql: string;
   developerList: Developer[];
   leadDeveloperEmail: string;
+  gitProvider?: "github" | "gitlab" | "bitbucket";
+  gitOwner?: string;
+  gitRepository?: string;
+  repositoryPath?: string;
   baseBranch: string;
   branchPrefix: string;
   autoPickEnabled: boolean;

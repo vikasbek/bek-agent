@@ -91,11 +91,11 @@ async function processConfig(
 
     const branchName = `${config.branchPrefix}/${issue.jiraKey.toLowerCase()}-${slugify(issue.summary) || issue.id.slice(0, 8)}`;
     const git = new GitClient({
-      provider: env.GIT_PROVIDER,
+      provider: config.gitProvider ?? env.GIT_PROVIDER,
       token: env.GIT_TOKEN ?? "",
-      owner: env.GIT_OWNER ?? "",
-      repository: env.GIT_REPOSITORY ?? "",
-      repositoryPath: env.REPOSITORY_PATH || process.cwd()
+      owner: config.gitOwner || env.GIT_OWNER || "",
+      repository: config.gitRepository || env.GIT_REPOSITORY || "",
+      repositoryPath: config.repositoryPath || env.REPOSITORY_PATH || process.cwd()
     });
 
     await git.ensureBranch(branchName, config.baseBranch);

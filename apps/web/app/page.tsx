@@ -45,7 +45,7 @@ export default async function HomePage() {
             <Row gutter={[24, 24]} align="middle" justify="space-between">
               <Col xs={24} lg={16}>
                 <h1 style={{ margin: 0 }}>
-                  etbek administrator dashboard
+                viBek administrator dashboard
                 </h1>
                 <p style={{ marginTop: 12, marginBottom: 0, maxWidth: 760, color: "var(--muted)" }}>
                   Control Jira intake, runtime configs, queue execution, and GitHub automation from a single
@@ -64,7 +64,7 @@ export default async function HomePage() {
             {[
               ["Environment", health?.appEnv ?? "unknown", "dev, staging, or prod"],
               ["Storage", health?.database.mode ?? "offline", "Mongo-backed persistence"],
-              ["Queue", String(issueCount), "issues tracked in etbek"],
+              ["Queue", String(issueCount), "issues tracked in viBek"],
               ["Runs", String(runCount), "automation executions recorded"],
               ["Developers", String(developerCount), "people in the assignment list"]
               ].map(([title, value, hint]) => (

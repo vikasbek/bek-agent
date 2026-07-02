@@ -100,7 +100,7 @@ function renderAgentStatusComment(params: {
   prMessage?: string;
 }) {
   const lines = [
-    `Hi I am etBek: ${params.issueKey}`,
+    `Hi I am viBek: ${params.issueKey}`,
     params.status === "success" ? "I have completed the requested work." : "I could not complete the requested work.",
     `Status: ${params.status.toUpperCase()}`,
     `Message: ${params.message}`
@@ -150,8 +150,8 @@ async function finishExecution(
   });
 }
 
-function getRepositoryRoot(env: AppEnv) {
-  return env.REPOSITORY_PATH || process.cwd();
+function getRepositoryRoot(env: AppEnv, config?: RuntimeConfigRecord) {
+  return config?.repositoryPath || env.REPOSITORY_PATH || process.cwd();
 }
 
 function looksLikeUnifiedDiff(patch: string) {
@@ -159,8 +159,8 @@ function looksLikeUnifiedDiff(patch: string) {
   return trimmed.startsWith("*** Begin Patch") || trimmed.startsWith("diff --git") || trimmed.includes("\n+++ ");
 }
 
-async function applyChangePlan(env: AppEnv, plan: ChangePlan) {
-  const repoRoot = getRepositoryRoot(env);
+async function applyChangePlan(env: AppEnv, plan: ChangePlan, config?: RuntimeConfigRecord) {
+  const repoRoot = getRepositoryRoot(env, config);
   if (!plan.patch.trim()) {
     return [];
   }
@@ -183,6 +183,7 @@ async function applyChangePlan(env: AppEnv, plan: ChangePlan) {
 
 async function applyPlanWithRepair(
   env: AppEnv,
+  config: RuntimeConfigRecord,
   model: ReturnType<typeof createModelProvider>,
   plan: ChangePlan,
   issueKey: string,
@@ -190,7 +191,7 @@ async function applyPlanWithRepair(
   requirementSummary: string
 ) {
   try {
-    return await applyChangePlan(env, plan);
+    return await applyChangePlan(env, plan, config);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn("patch application failed, attempting repair", {
@@ -204,7 +205,7 @@ async function applyPlanWithRepair(
       patchError: message,
       patch: plan.patch
     });
-    return await applyChangePlan(env, repaired);
+    return await applyChangePlan(env, repaired, config);
   }
 }
 
@@ -343,6 +344,7 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
     email: env.JIRA_EMAIL,
     apiToken: env.JIRA_API_TOKEN
   });
+  let lockAcquired = false;
   try {
     const locked = await repository.claimIssueLock(issue.jiraKey, config.name);
     if (!locked) {
@@ -358,6 +360,7 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
       });
       return;
     }
+    lockAcquired = true;
 
     await repository.saveIssue({
       ...issue,
@@ -371,11 +374,11 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
 
     const branchName = `${config.branchPrefix}/${issue.jiraKey.toLowerCase()}-${slugify(issue.summary) || issue.id.slice(0, 8)}`;
     const git = new GitClient({
-      provider: env.GIT_PROVIDER,
+      provider: config.gitProvider ?? env.GIT_PROVIDER,
       token: env.GIT_TOKEN ?? "",
-      owner: env.GIT_OWNER ?? "",
-      repository: env.GIT_REPOSITORY ?? "",
-      repositoryPath: env.REPOSITORY_PATH || process.cwd()
+      owner: config.gitOwner || env.GIT_OWNER || "",
+      repository: config.gitRepository || env.GIT_REPOSITORY || "",
+      repositoryPath: config.repositoryPath || env.REPOSITORY_PATH || process.cwd()
     });
     const fullIssue = await jira.getIssue(issue.jiraKey);
     const description = normalizeJiraText(fullIssue?.fields?.description).trim();
@@ -444,6 +447,8 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
         status: "failed",
         message: "Requirement gap detected and issue reassigned"
       });
+      await repository.releaseIssueLock(issue.jiraKey, config.name);
+      lockAcquired = false;
       logger.info("requirement gap detected", { configName: config.name, jiraKey: issue.jiraKey });
       return;
     }
@@ -479,6 +484,7 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
 
     const changedFiles = await applyPlanWithRepair(
       env,
+      config,
       model,
       plan,
       issue.jiraKey,
@@ -533,14 +539,16 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
     await repository.saveIssue({
       ...issue,
       status: "ready_for_review",
-      lockStatus: "locked",
-      lockedByConfig: config.name,
-      lockedAt: issue.lockedAt ?? new Date().toISOString(),
+      lockStatus: "unlocked",
+      lockedByConfig: undefined,
+      lockedAt: undefined,
       branchName,
       prUrl: pr.url,
       lastProcessedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
+    await repository.releaseIssueLock(issue.jiraKey, config.name);
+    lockAcquired = false;
     const hasDiff = await git.hasDiff(branchName);
     if (!hasDiff) {
       throw new Error(`No code changes were produced for ${issue.jiraKey}`);
@@ -613,13 +621,17 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
-      await saveJiraIssue(repository, {
+    await saveJiraIssue(repository, {
         runId: failedRunId,
         jobId,
         configName: config.name,
         issueKey: issue.jiraKey,
         payload: issue
       });
+    if (lockAcquired) {
+      await repository.releaseIssueLock(issue.jiraKey, config.name);
+      lockAcquired = false;
+    }
     throw error;
   }
 }

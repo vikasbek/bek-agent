@@ -1,6 +1,6 @@
-# etbek
+# viBek
 
-`etbek` is a dashboard-driven AI agent for Jira-to-branch-to-PR automation.
+`viBek` is a dashboard-driven AI agent for Jira-to-branch-to-PR automation.
 
 ## Stack
 

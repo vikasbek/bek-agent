@@ -24,7 +24,7 @@ export function TopBar() {
       <div className="topbar-brand">
         <div className="brand-badge">E</div>
         <div>
-          <div className="brand-title">etbek</div>
+          <div className="brand-title">viBek</div>
           <div className="brand-subtitle">Administrator control plane</div>
         </div>
       </div>

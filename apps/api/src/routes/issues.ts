@@ -7,6 +7,7 @@ const issueSchema = z.object({
   jiraKey: z.string().min(1),
   summary: z.string().min(1),
   assigneeEmail: z.string().email().optional(),
+  configName: z.string().optional(),
   status: z.enum(["queued", "picked", "in_progress", "ready_for_review", "done", "blocked"]),
   branchName: z.string().optional(),
   prUrl: z.string().url().optional(),
@@ -49,6 +50,9 @@ export function issuesRouter(repository: Repository) {
       lastProcessedAt: undefined,
       updatedAt: new Date().toISOString()
     });
+    if (issue.configName) {
+      await repository.releaseIssueLock(issue.jiraKey, issue.configName);
+    }
 
     res.json({
       ok: true,

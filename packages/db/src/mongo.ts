@@ -167,6 +167,10 @@ async function loadRuntimeConfig(db: Db): Promise<RuntimeConfig> {
     jiraJql: doc.jiraJql ?? defaultRuntimeConfig.jiraJql,
     developerList: doc.developerList ?? defaultRuntimeConfig.developerList,
     leadDeveloperEmail: doc.leadDeveloperEmail ?? defaultRuntimeConfig.leadDeveloperEmail,
+    gitProvider: doc.gitProvider ?? defaultRuntimeConfig.gitProvider,
+    gitOwner: doc.gitOwner ?? defaultRuntimeConfig.gitOwner,
+    gitRepository: doc.gitRepository ?? defaultRuntimeConfig.gitRepository,
+    repositoryPath: doc.repositoryPath ?? defaultRuntimeConfig.repositoryPath,
     baseBranch: doc.baseBranch ?? defaultRuntimeConfig.baseBranch,
     branchPrefix: doc.branchPrefix ?? defaultRuntimeConfig.branchPrefix,
     autoPickEnabled: doc.autoPickEnabled ?? defaultRuntimeConfig.autoPickEnabled,
@@ -214,6 +218,10 @@ async function listRuntimeConfigs(db: Db): Promise<RuntimeConfigRecord[]> {
     jiraJql: doc.jiraJql ?? defaultRuntimeConfig.jiraJql,
     developerList: doc.developerList ?? defaultRuntimeConfig.developerList,
     leadDeveloperEmail: doc.leadDeveloperEmail ?? defaultRuntimeConfig.leadDeveloperEmail,
+    gitProvider: doc.gitProvider ?? defaultRuntimeConfig.gitProvider,
+    gitOwner: doc.gitOwner ?? defaultRuntimeConfig.gitOwner,
+    gitRepository: doc.gitRepository ?? defaultRuntimeConfig.gitRepository,
+    repositoryPath: doc.repositoryPath ?? defaultRuntimeConfig.repositoryPath,
     baseBranch: doc.baseBranch ?? defaultRuntimeConfig.baseBranch,
     branchPrefix: doc.branchPrefix ?? defaultRuntimeConfig.branchPrefix,
     autoPickEnabled: doc.autoPickEnabled ?? defaultRuntimeConfig.autoPickEnabled,
@@ -246,6 +254,10 @@ async function upsertRuntimeConfig(
           jiraJql: existing.jiraJql ?? defaultRuntimeConfig.jiraJql,
           developerList: existing.developerList ?? defaultRuntimeConfig.developerList,
           leadDeveloperEmail: existing.leadDeveloperEmail ?? defaultRuntimeConfig.leadDeveloperEmail,
+          gitProvider: existing.gitProvider ?? defaultRuntimeConfig.gitProvider,
+          gitOwner: existing.gitOwner ?? defaultRuntimeConfig.gitOwner,
+          gitRepository: existing.gitRepository ?? defaultRuntimeConfig.gitRepository,
+          repositoryPath: existing.repositoryPath ?? defaultRuntimeConfig.repositoryPath,
           baseBranch: existing.baseBranch ?? defaultRuntimeConfig.baseBranch,
           branchPrefix: existing.branchPrefix ?? defaultRuntimeConfig.branchPrefix,
           autoPickEnabled: existing.autoPickEnabled ?? defaultRuntimeConfig.autoPickEnabled,
@@ -274,6 +286,10 @@ async function upsertRuntimeConfig(
   if (patch.jiraJql !== undefined) runtimePatch.jiraJql = patch.jiraJql;
   if (patch.developerList !== undefined) runtimePatch.developerList = patch.developerList;
   if (patch.leadDeveloperEmail !== undefined) runtimePatch.leadDeveloperEmail = patch.leadDeveloperEmail;
+  if (patch.gitProvider !== undefined) runtimePatch.gitProvider = patch.gitProvider;
+  if (patch.gitOwner !== undefined) runtimePatch.gitOwner = patch.gitOwner;
+  if (patch.gitRepository !== undefined) runtimePatch.gitRepository = patch.gitRepository;
+  if (patch.repositoryPath !== undefined) runtimePatch.repositoryPath = patch.repositoryPath;
   if (patch.baseBranch !== undefined) runtimePatch.baseBranch = patch.baseBranch;
   if (patch.branchPrefix !== undefined) runtimePatch.branchPrefix = patch.branchPrefix;
   if (patch.autoPickEnabled !== undefined) runtimePatch.autoPickEnabled = patch.autoPickEnabled;
@@ -328,6 +344,11 @@ async function claimIssueLock(db: Db, jiraKey: string, configName: string): Prom
   const collection = db.collection<{ jiraKey: string; lockedByConfig?: string; lockedAt?: string }>(
     COLLECTIONS.issueLocks
   );
+  const existing = await collection.findOne({ jiraKey });
+  if (existing) {
+    return existing.lockedByConfig === configName;
+  }
+
   try {
     await collection.insertOne({
       jiraKey,
@@ -406,7 +427,7 @@ function mongoRepo(db: Db): Repository {
       return claimIssueLock(db, jiraKey, configName);
     },
     async releaseIssueLock(jiraKey, configName) {
-      return Promise.resolve();
+      await db.collection(COLLECTIONS.issueLocks).deleteOne({ jiraKey, lockedByConfig: configName });
     },
     async listQueueSummaries() {
       return listQueueSummaries(db);
