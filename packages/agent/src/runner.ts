@@ -493,7 +493,7 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
       if (!agentResult.ok) {
         throw new Error(`Coding agent failed: ${agentResult.rawOutput.slice(0, 500)}`);
       }
-      commitResult = await git.commitAndPush(branchName, agentResult.commitMessage);
+      commitResult = await git.commitAndPush(branchName, agentResult.commitMessage, config.baseBranch);
     } else {
       const plan = await model.generateImplementationPlan({
         issueKey: issue.jiraKey,
@@ -524,7 +524,7 @@ async function processIssue(env: AppEnv, repository: Repository, config: Runtime
         throw new Error(`No code changes were generated for ${issue.jiraKey}`);
       }
 
-      commitResult = await git.commitAndPush(branchName, plan.commitMessage);
+      commitResult = await git.commitAndPush(branchName, plan.commitMessage, config.baseBranch);
     }
 
     if (!commitResult.committed || !commitResult.pushed) {

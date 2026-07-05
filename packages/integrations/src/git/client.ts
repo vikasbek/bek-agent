@@ -138,16 +138,27 @@ export class GitClient {
     return true;
   }
 
-  async commitAndPush(branchName: string, message: string) {
+  async commitAndPush(branchName: string, message: string, baseBranch = "master") {
     const repoPath = await this.ensureRepository();
     await this.ensureOriginMatches(repoPath);
     await execFileAsync("git", ["add", "-A"], { cwd: repoPath });
-    const { stdout } = await execFileAsync("git", ["status", "--porcelain"], { cwd: repoPath });
-    if (!String(stdout).trim()) {
+    const { stdout: statusOut } = await execFileAsync("git", ["status", "--porcelain"], { cwd: repoPath });
+    if (String(statusOut).trim()) {
+      // Working tree still has edits - the coding agent left them uncommitted, so commit them ourselves.
+      await execFileAsync("git", ["commit", "-m", message], { cwd: repoPath });
+    }
+
+    const { stdout: aheadOut } = await execFileAsync(
+      "git",
+      ["rev-list", "--count", `${baseBranch}..HEAD`],
+      { cwd: repoPath }
+    );
+    const aheadCount = Number(String(aheadOut).trim());
+    if (!aheadCount) {
+      // Nothing committed by us and nothing already committed by the coding agent either.
       return { committed: false, pushed: false, sha: "" };
     }
 
-    await execFileAsync("git", ["commit", "-m", message], { cwd: repoPath });
     await execFileAsync("git", ["push", "origin", branchName], { cwd: repoPath });
     const { stdout: shaOut } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: repoPath });
     return { committed: true, pushed: true, sha: String(shaOut).trim() };
